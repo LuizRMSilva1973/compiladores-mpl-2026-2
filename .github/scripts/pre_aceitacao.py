@@ -111,11 +111,19 @@ def portao_executaveis(pasta):
     return True, 'compilar e executar presentes'
 
 
+AUXILIARES = {'tests', 'test', 'testes', 'apresentacao', 'docs', 'doc', 'slides', 'scripts', 'tools', 'ferramentas', 'exemplos'}
+
+
+def e_auxiliar(rel):
+    """Arquivo fora do compilador (testes, apresentacao, documentacao): a regra da biblioteca padrao vale para o compilador."""
+    return any(parte.lower() in AUXILIARES for parte in rel.replace('\\', '/').split('/')[:-1])
+
+
 def modulos_locais(pasta):
-    nomes = set()
-    for c in arquivos_codigo(pasta):
-        if c.endswith('.py'):
-            nomes.add(os.path.splitext(os.path.basename(c))[0])
+    nomes = {'verificar'}            # verificar.py vem do lab e fica ao lado do compilador
+    for raiz, dirs, arqs in os.walk(pasta):
+        dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__'}]
+        nomes.update(os.path.splitext(a)[0] for a in arqs if a.endswith('.py'))
     for raiz, dirs, _ in os.walk(pasta):
         dirs[:] = [d for d in dirs if d not in IGNORAR_DIRS]
         nomes.update(dirs)
@@ -124,7 +132,7 @@ def modulos_locais(pasta):
 
 def portao_bibliotecas(pasta):
     """So biblioteca padrao (regra do README do lab) e nenhum gerador de parser."""
-    problemas = []
+    problemas, avisos = [], []
     stdlib = set(getattr(sys, 'stdlib_module_names', ())) | {'__future__'}
     locais = modulos_locais(pasta)
     for c in arquivos_codigo(pasta):
@@ -136,17 +144,17 @@ def portao_bibliotecas(pasta):
                 mod = (m.group(1) or m.group(2)).lstrip('.').split('.')[0]
                 if not mod or mod in locais or mod in stdlib:
                     continue
-                problemas.append(f'{rel}: importa `{mod}`, que nao e da biblioteca padrao')
+                (avisos if e_auxiliar(rel) else problemas).append(f'{rel}: importa `{mod}`, que nao e da biblioteca padrao')
         imports = '\n'.join(re.findall(r'^\s*(?:import|from|require|require_once|include|#include|use)\b.*$', texto, re.M))
         g = GERADORES.search(imports)
         if g:
-            problemas.append(f'{rel}: usa gerador de parser (`{g.group(0)}`)')
+            (avisos if e_auxiliar(rel) else problemas).append(f'{rel}: usa gerador de parser (`{g.group(0)}`)')
     for raiz, dirs, nomes in os.walk(pasta):
         dirs[:] = [d for d in dirs if d not in IGNORAR_DIRS]
         for n in nomes:
             if os.path.splitext(n)[1].lower() in {'.y', '.yy', '.l', '.ll', '.g4', '.jj', '.lark'}:
                 problemas.append(f'{os.path.relpath(os.path.join(raiz, n), pasta)}: arquivo de gramatica para gerador de parser')
-    return (not problemas), problemas
+    return (not problemas), sorted(set(problemas)), sorted(set(avisos))
 
 
 # ----------------------------------------------------------------- funcional
@@ -325,8 +333,8 @@ def main():
     else:
         portoes.append(('Prazo (so depois da apresentacao)',) + portao_prazo(pasta, a.criado_em))
     portoes.append(('compilar e executar na raiz',) + portao_executaveis(pasta))
-    ok_lib, prob_lib = portao_bibliotecas(pasta)
-    portoes.append(('So biblioteca padrao, sem gerador de parser', ok_lib, '; '.join(prob_lib) or 'ok'))
+    ok_lib, prob_lib, avisos_lib = portao_bibliotecas(pasta)
+    portoes.append(('So biblioteca padrao no compilador, sem gerador de parser', ok_lib, '; '.join(prob_lib) or 'ok'))
     recusado = not all(p[1] for p in portoes)
 
     func, func_extra = {}, {}
@@ -382,6 +390,9 @@ def main():
     L += ['## 1. Portoes (recusam sozinhos)', '', '| Portao | Resultado | Detalhe |', '|---|---|---|']
     for titulo, ok, det in portoes:
         L.append(f'| {titulo} | {"ok" if ok else "**RECUSA**"} | {det} |')
+    if avisos_lib:
+        L += ['', '**Avisos (nao recusam):** fora do compilador (testes, apresentacao, documentacao) ha dependencias externas: '
+              + '; '.join(avisos_lib)]
     L += ['', '## 2. Funcional (verificador oficial do compiladores-lab, corpus publico)', '']
     if func:
         L += ['| Entrega | Passaram |', '|---|---|'] + [f'| E{n} | {v[0]} de {v[1]} |' for n, v in sorted(func.items())]

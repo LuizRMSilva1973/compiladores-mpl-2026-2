@@ -81,6 +81,29 @@ def portao_prazo(pasta, criado_em):
     return True, f'turma {t}; aberto em {quando:%d/%m/%Y %H:%M}'
 
 
+def turma_do_grupo_md(pasta):
+    m = re.search(r'Turma:\*{0,2}\s*([AB])\b(?!.*\bou\b)', ler(os.path.join(pasta, 'GRUPO.md')))
+    return m.group(1) if m else None
+
+
+def pendencias_do_envio(pasta):
+    """No TESTE (repositorio do proprio grupo): o que ainda impediria o envio de verdade."""
+    falta = []
+    g = ler(os.path.join(pasta, 'GRUPO.md'))
+    if not g:
+        falta.append('criar o GRUPO.md (copiar o GRUPO-modelo.md da vitrine) e preencher')
+    else:
+        if 'Nome 1' in g or '# Nome do grupo' in g:
+            falta.append('preencher no GRUPO.md o nome do grupo e os integrantes')
+        if not turma_do_grupo_md(pasta):
+            falta.append('escrever no GRUPO.md a turma: A (quarta) ou B (segunda)')
+        if not re.search(r'https://github\.com/(?!usuario/repositorio)[\w.-]+/[\w.-]+', g):
+            falta.append('colocar no GRUPO.md o link do repositorio do grupo')
+        if re.search(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', g, re.I):
+            falta.append('tirar e-mail do GRUPO.md (a vitrine e publica)')
+    return falta
+
+
 def portao_executaveis(pasta):
     faltam = [n for n in ('compilar', 'executar') if not os.path.isfile(os.path.join(pasta, n))]
     if faltam:
@@ -286,12 +309,21 @@ def main():
     ap.add_argument('--publico', action='store_true',
                     help='laudo para o GitHub: so portoes, funcional e qualidade (sem sinais de IA nem semelhanca)')
     ap.add_argument('--isolar', action='store_true', help='roda o codigo do aluno dentro do bwrap (uso local)')
+    ap.add_argument('--teste', action='store_true',
+                    help='teste de envio no repositorio do proprio grupo: sem portao de prazo, lista o que falta para o envio')
     a = ap.parse_args()
     pasta = a.pasta.rstrip('/')
     nome = os.path.basename(pasta)
 
     portoes = []
-    portoes.append(('Prazo (so depois da apresentacao)',) + portao_prazo(pasta, a.criado_em))
+    falta_envio = []
+    if a.teste:
+        falta_envio = pendencias_do_envio(pasta)
+        t = turma_do_grupo_md(pasta)
+        quando = f'a partir de {APRESENTACAO[t]:%d/%m/%Y}' if t else 'depois da apresentacao da sua turma'
+        portoes.append(('Prazo', True, f'teste de envio; o envio de verdade (pull request na vitrine) e {quando}'))
+    else:
+        portoes.append(('Prazo (so depois da apresentacao)',) + portao_prazo(pasta, a.criado_em))
     portoes.append(('compilar e executar na raiz',) + portao_executaveis(pasta))
     ok_lib, prob_lib = portao_bibliotecas(pasta)
     portoes.append(('So biblioteca padrao, sem gerador de parser', ok_lib, '; '.join(prob_lib) or 'ok'))
@@ -331,13 +363,22 @@ def main():
     total_ok, total = func[max(func)] if func else (0, 0)
     func_completo = bool(total) and total_ok == total
     if recusado:
-        veredito = 'RECUSADO NA PRE-ACEITACAO'
-    elif not func_completo or (not a.publico and pontos >= 50):
-        veredito = 'PRONTO PARA REVISAO, COM ATENCAO'
+        veredito = 'RECUSADO NA ANALISE PRELIMINAR'
+    elif not func_completo:
+        veredito = 'PASSOU NOS PORTOES, MAS O VERIFICADOR AINDA TEM FALHAS'
+    elif not a.publico and pontos >= 50:
+        veredito = 'APROVADO NA ANALISE PRELIMINAR — SEGUNDA ANALISE: ATENCAO'
     else:
-        veredito = 'PRONTO PARA REVISAO'
+        veredito = 'APROVADO NA ANALISE PRELIMINAR — PENDENTE: SEGUNDA ANALISE (IA + PROFESSOR)'
 
-    L = [f'# Laudo de pre-aceitacao — `{nome}`', '', f'**Veredito: {veredito}**', '']
+    titulo = 'Teste de envio' if a.teste else 'Laudo de pre-aceitacao'
+    L = [f'# {titulo} — `{nome}`', '', f'**Veredito: {veredito}**', '']
+    if a.teste:
+        L += ['> Isto e um **teste**: nada foi enviado. O envio de verdade e o pull request na vitrine, depois da '
+              'apresentacao. Passar aqui significa passar na analise preliminar; a segunda analise (IA + professor) '
+              'acontece depois do envio de verdade.', '']
+        if falta_envio:
+            L += ['**Ainda falta para o envio de verdade:**', ''] + [f'- {x}' for x in falta_envio] + ['']
     L += ['## 1. Portoes (recusam sozinhos)', '', '| Portao | Resultado | Detalhe |', '|---|---|---|']
     for titulo, ok, det in portoes:
         L.append(f'| {titulo} | {"ok" if ok else "**RECUSA**"} | {det} |')

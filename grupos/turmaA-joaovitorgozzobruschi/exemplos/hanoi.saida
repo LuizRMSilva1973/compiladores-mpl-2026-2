@@ -1,0 +1,21 @@
+== numero para texto ==
+2026 tem 4 digitos
+-305
+== torre de hanoi com 3 discos ==
+  disco 1: A -> C
+  disco 2: A -> B
+  disco 1: C -> B
+  disco 3: A -> C
+  disco 1: B -> A
+  disco 2: B -> C
+  disco 1: A -> C
+movimentos: 7
+== quantos movimentos para n discos (2^n - 1) ==
+5 discos: 31 movimentos
+10 discos: 1023 movimentos
+15 discos: 32767 movimentos
+20 discos: 1048575 movimentos
+== raiz quadrada por Newton ==
+1.414214
+9.000000
+2.000000
